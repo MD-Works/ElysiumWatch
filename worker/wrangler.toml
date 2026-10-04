@@ -1,0 +1,17 @@
+name = "neighbourhood-watch-api"
+main = "index.js"
+compatibility_date = "2026-08-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "neighbourhood-watch-db"
+database_id = "da098f86-cdf6-4c5a-a319-7046f4e6dbb2"
+
+# Secrets — set these with `wrangler secret put`, never commit them here:
+#   npx wrangler secret put B2_KEY_ID
+#   npx wrangler secret put B2_APPLICATION_KEY
+#   npx wrangler secret put B2_BUCKET_ID
+#
+# Non-secret vars can go here directly:
+[vars]
+B2_BUCKET_NAME = "elysiumwatch-reports"

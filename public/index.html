@@ -503,9 +503,33 @@ function renderResults(results){
 function hideResults(){ searchResultsEl.style.display='none'; searchResultsEl.innerHTML=''; }
 
 // ---------- FILTERS ----------
+const FILTER_STORE_KEY = 'ew:filters:v1';
 let activeCat  = 'all';
 let activeTime = 'ever';
 let allReports = [];  // full dataset — filters applied client-side
+
+// Highlight the pill whose data-<attr> matches value. Returns false if no such pill exists.
+function setActivePill(rowId, attr, value) {
+  const pills = [...document.querySelectorAll(`#${rowId} .filter-pill`)];
+  const match = pills.find(p => p.dataset[attr] === value);
+  if (!match) return false;
+  pills.forEach(p => p.classList.toggle('active', p === match));
+  return true;
+}
+
+// Remember the user's last choices on this device (storage can be blocked, so never throw).
+function saveFilters() {
+  try { localStorage.setItem(FILTER_STORE_KEY, JSON.stringify({ cat: activeCat, time: activeTime })); } catch (_) {}
+}
+function restoreFilters() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(FILTER_STORE_KEY) || '{}');
+    // Only restore values that still exist as pills; otherwise keep the defaults.
+    if (saved.cat  && setActivePill('cat-filter-row',  'cat',  saved.cat))  activeCat  = saved.cat;
+    if (saved.time && setActivePill('time-filter-row', 'time', saved.time)) activeTime = saved.time;
+  } catch (_) {}
+}
+restoreFilters(); // before loadReports() runs, so markers are filtered from the first render
 
 function timeFilterMs(key) {
   const now = Date.now();
@@ -533,6 +557,7 @@ document.getElementById('cat-filter-row').addEventListener('click', e => {
   if (!pill) return;
   activeCat = pill.dataset.cat;
   document.querySelectorAll('#cat-filter-row .filter-pill').forEach(p => p.classList.toggle('active', p === pill));
+  saveFilters();
   applyFilters();
 });
 
@@ -541,6 +566,7 @@ document.getElementById('time-filter-row').addEventListener('click', e => {
   if (!pill) return;
   activeTime = pill.dataset.time;
   document.querySelectorAll('#time-filter-row .filter-pill').forEach(p => p.classList.toggle('active', p === pill));
+  saveFilters();
   applyFilters();
 });
 
