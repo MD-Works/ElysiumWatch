@@ -1,13 +1,9 @@
 // ElysiumWatch Admin — Service Worker
 // Handles Web Push notifications for new reports.
-// Also registers a fetch handler (required for PWA installability).
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', event => event.waitUntil(clients.claim()));
 
-// Minimal fetch handler — required for the browser to consider this a PWA.
-// No offline caching yet; all requests pass through to the network.
-self.addEventListener('fetch', () => {});
 
 // ── Push handler ──
 self.addEventListener('push', event => {
