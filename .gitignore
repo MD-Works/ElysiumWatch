@@ -1,0 +1,6 @@
+db-export.sql
+*.sql
+.wrangler/
+.dev.vars
+.env
+node_modules/

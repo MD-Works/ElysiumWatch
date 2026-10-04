@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Neighbourhood Watch</title>
+<meta name="theme-color" content="#1b2530">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<style>
+  :root{
+    --ink:#1b2530;
+    --ink-soft:#3c4a5a;
+    --paper:#f4f6f5;
+    --card:#ffffff;
+    --line:#dde2e1;
+    --alert:#c15a34;
+    --alert-dark:#a44a29;
+    --safe:#2f6b52;
+    --pending:#b8862c;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; height:100%;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--paper); color:var(--ink);
+    -webkit-tap-highlight-color:transparent;
+  }
+  #app{
+    display:flex; flex-direction:column;
+    height:100vh; height:100dvh;
+  }
+
+  header{
+    padding:14px 16px calc(10px + env(safe-area-inset-top,0px)) 16px;
+    padding-top:calc(14px + env(safe-area-inset-top,0px));
+    background:var(--ink); color:#fff;
+    display:flex; align-items:center; justify-content:space-between;
+    flex-shrink:0; z-index:20; position:relative;
+  }
+  header h1{ font-size:16px; margin:0; font-weight:700; letter-spacing:.2px; }
+  header .locale{ font-size:11px; color:#a9b4bd; margin-top:2px; }
+  #refresh-btn{
+    background:none; border:1px solid #4a5a68; color:#cfd8de;
+    border-radius:8px; padding:7px 10px; font-size:12px;
+  }
+  #refresh-btn:active{ background:#2a3644; }
+
+  /* map wrapper establishes its own stacking context so Leaflet's internal
+     z-index values (up to 1000) never compete with the rest of the page */
+  #map-wrap{ flex:1; min-height:0; position:relative; z-index:1; }
+  #map{ position:absolute; inset:0; z-index:1; }
+  .leaflet-container{ background:#dfe6e4; }
+
+  /* ---------- address search ---------- */
+  #search-wrap{
+    position:absolute; top:12px; left:12px; right:12px; z-index:10;
+  }
+  #search-box{
+    display:flex; align-items:center; gap:8px;
+    background:#fff; border-radius:12px; padding:10px 12px;
+    box-shadow:0 2px 10px rgba(0,0,0,.15);
+  }
+  #search-box svg{ flex-shrink:0; opacity:.5; }
+  #search-input{
+    flex:1; border:none; outline:none; font-size:14px; font-family:inherit; color:var(--ink);
+    background:transparent;
+  }
+  #search-clear{
+    border:none; background:none; color:var(--ink-soft); font-size:16px; padding:2px 4px; display:none;
+  }
+  #search-results{
+    margin-top:6px; background:#fff; border-radius:12px; overflow:hidden;
+    box-shadow:0 4px 14px rgba(0,0,0,.18); display:none; max-height:240px; overflow-y:auto;
+  }
+  .search-result{
+    padding:11px 14px; font-size:13px; color:var(--ink); border-bottom:1px solid var(--line);
+    line-height:1.35;
+  }
+  .search-result:last-child{ border-bottom:none; }
+  .search-result:active{ background:#f0f2f1; }
+  .search-empty{ padding:12px 14px; font-size:13px; color:var(--ink-soft); }
+
+  /* pin markers */
+  .pin-marker{
+    width:26px; height:26px; border-radius:50% 50% 50% 0;
+    transform:rotate(-45deg);
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 1px 3px rgba(0,0,0,.35);
+    border:2px solid #fff;
+  }
+  .pin-marker.approved{ background:var(--alert); }
+  .pin-marker span{ transform:rotate(45deg); font-size:12px; }
+
+  .drop-marker{
+    width:30px; height:30px; border-radius:50% 50% 50% 0;
+    transform:rotate(-45deg);
+    background:var(--ink);
+    border:3px solid #fff;
+    box-shadow:0 2px 6px rgba(0,0,0,.4);
+  }
+
+  /* confirm popup (bound to the draft marker) */
+  .confirm-popup{ font-family:inherit; min-width:180px; }
+  .confirm-popup .ct{ font-size:14px; font-weight:800; color:var(--ink); margin-bottom:3px; }
+  .confirm-popup .cs{ font-size:12px; color:var(--ink-soft); line-height:1.4; margin-bottom:10px; }
+  .confirm-yes-btn{
+    width:100%; border:none; background:var(--alert); color:#fff;
+    font-weight:700; font-size:13px; padding:9px 0; border-radius:8px;
+  }
+  .confirm-yes-btn:active{ background:var(--alert-dark); }
+  .leaflet-popup-content{ margin:12px 14px; }
+  .leaflet-popup-content-wrapper{ border-radius:12px; }
+
+  /* my-location pill */
+  #locate-btn{
+    position:absolute; left:16px; bottom:calc(22px + env(safe-area-inset-bottom,0px));
+    z-index:10; background:#fff; border:1px solid var(--line);
+    width:44px; height:44px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 2px 8px rgba(0,0,0,.15); font-size:18px;
+  }
+  #locate-btn:active{ background:#eef0ef; }
+
+  #tap-hint{
+    position:absolute; left:12px; right:12px; bottom:calc(22px + env(safe-area-inset-bottom,0px));
+    z-index:10; text-align:center; pointer-events:none;
+  }
+  #tap-hint span{
+    background:rgba(27,37,48,.85); color:#fff; font-size:12px;
+    padding:8px 14px; border-radius:999px; display:inline-block;
+  }
+
+  /* bottom sheet (message + photo, opened after location confirmed) */
+  #sheet-backdrop{
+    position:fixed; inset:0; background:rgba(15,20,26,.4);
+    opacity:0; pointer-events:none; transition:opacity .18s ease;
+    z-index:30;
+  }
+  #sheet-backdrop.open{ opacity:1; }
+
+  #sheet{
+    position:fixed; left:0; right:0; bottom:0;
+    background:var(--card);
+    border-radius:20px 20px 0 0;
+    transform:translateY(100%);
+    transition:transform .22s cubic-bezier(.2,.8,.3,1);
+    z-index:31;
+    max-height:75vh; max-height:75dvh;
+    display:flex; flex-direction:column;
+    box-shadow:0 -6px 24px rgba(0,0,0,.2);
+  }
+  #sheet.open{ transform:translateY(0); }
+
+  .sheet-handle{ width:36px; height:4px; background:var(--line); border-radius:99px; margin:10px auto 4px auto; flex-shrink:0; }
+  .sheet-scroll{ overflow-y:auto; padding:6px 20px calc(20px + env(safe-area-inset-bottom,0px)) 20px; }
+  .sheet-title{ font-size:18px; font-weight:800; margin:6px 0 2px 0; }
+  .sheet-sub{ font-size:13px; color:var(--ink-soft); margin:0 0 14px 0; line-height:1.4; }
+
+  .loc-chip{
+    display:flex; align-items:center; gap:8px;
+    font-size:13px; color:var(--ink-soft);
+    background:#f0f2f1; border-radius:10px; padding:9px 12px; margin-bottom:4px;
+  }
+  .loc-chip b{ color:var(--ink); font-weight:700; }
+
+  #category-row{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  .cat-chip{
+    display:flex; align-items:center; gap:6px;
+    border:1.5px solid var(--line); background:#fbfcfc;
+    border-radius:999px; padding:8px 13px; font-size:13px; font-weight:600; color:var(--ink-soft);
+  }
+  .cat-chip .cat-icon{ font-size:14px; }
+  .cat-chip.selected{ border-color:var(--ink); background:var(--ink); color:#fff; }
+
+  #ref-nr-field{ display:none; }
+  #ref-nr-field .hint{ font-size:11.5px; color:var(--ink-soft); font-weight:500; text-transform:none; margin-top:4px; letter-spacing:0; }
+
+  label{ display:block; font-size:12px; font-weight:700; color:var(--ink-soft); margin:14px 0 6px 0; text-transform:uppercase; letter-spacing:.4px; }
+
+  input[type=text], input[type=datetime-local], textarea{
+    width:100%; border:1.5px solid var(--line); border-radius:10px;
+    padding:11px 12px; font-size:15px; font-family:inherit; color:var(--ink);
+    background:#fbfcfc;
+  }
+  input[type=text]:focus, input[type=datetime-local]:focus, textarea:focus{ outline:none; border-color:var(--ink-soft); }
+  textarea{ resize:vertical; min-height:80px; }
+
+  #photo-row{ display:flex; gap:10px; align-items:center; margin-top:8px; }
+  #photo-preview{ width:64px; height:64px; border-radius:10px; object-fit:cover; border:1.5px solid var(--line); display:none; }
+  .photo-btn{ border:1.5px dashed var(--line); background:#fbfcfc; border-radius:10px; padding:10px 14px; font-size:13px; color:var(--ink-soft); font-weight:600; }
+
+  #submit-btn{
+    width:100%; margin-top:20px; padding:15px; border:none; border-radius:12px;
+    background:var(--alert); color:#fff; font-size:15px; font-weight:800; letter-spacing:.2px;
+  }
+  #submit-btn:active{ background:var(--alert-dark); }
+  #submit-btn:disabled{ background:#c8ccce; }
+  #cancel-btn{ width:100%; margin-top:10px; padding:12px; border:none; background:none; color:var(--ink-soft); font-size:14px; font-weight:600; }
+
+  .toast{
+    position:fixed; left:50%; bottom:100px; transform:translate(-50%,10px);
+    background:var(--ink); color:#fff; padding:12px 18px; border-radius:10px;
+    font-size:13px; z-index:50; opacity:0; transition:all .25s ease;
+    pointer-events:none; max-width:80vw; text-align:center;
+  }
+  .toast.show{ opacity:1; transform:translate(-50%,0); }
+
+  .rep-popup{ font-size:13px; line-height:1.4; max-width:220px; }
+  .rep-popup .rep-cat{
+    display:inline-flex; align-items:center; gap:5px;
+    font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px;
+    background:var(--paper); border-radius:999px; padding:3px 9px; margin-bottom:6px;
+  }
+  .rep-popup .rep-msg{ margin:0 0 5px 0; color:var(--ink); font-size:13px; line-height:1.4; }
+  .rep-popup .rep-meta{ color:var(--ink-soft); font-size:11px; line-height:1.6; }
+  .rep-popup .rep-ref{ color:var(--ink-soft); font-size:11px; }
+  .rep-popup img{ width:100%; border-radius:8px; margin-top:8px; display:block; }
+
+  /* ---------- filter bar ---------- */
+  #filter-bar{
+    position:absolute; bottom:calc(16px + env(safe-area-inset-bottom,0px));
+    left:0; right:0; z-index:10;
+    display:flex; flex-direction:column; gap:6px; align-items:center;
+    pointer-events:none;
+  }
+  .filter-row{
+    display:flex; gap:6px; padding:0 12px;
+    overflow-x:auto; width:100%; justify-content:center;
+    pointer-events:all;
+    scrollbar-width:none;
+  }
+  .filter-row::-webkit-scrollbar{ display:none; }
+  .filter-pill{
+    flex-shrink:0;
+    display:inline-flex; align-items:center; gap:5px;
+    background:rgba(255,255,255,.92); backdrop-filter:blur(6px);
+    border:1.5px solid var(--line); border-radius:999px;
+    padding:7px 13px; font-size:12px; font-weight:600; color:var(--ink-soft);
+    box-shadow:0 1px 4px rgba(0,0,0,.12);
+    cursor:pointer; white-space:nowrap;
+    transition:background .12s, color .12s, border-color .12s;
+  }
+  .filter-pill.active{
+    background:var(--ink); color:#fff; border-color:var(--ink);
+  }
+  .filter-pill .fp-icon{ font-size:13px; }
+
+  /* locate btn moves up to make room for filter bar */
+  #locate-btn{
+    bottom:calc(22px + env(safe-area-inset-bottom,0px) + 88px);
+  }
+  #tap-hint{
+    bottom:calc(22px + env(safe-area-inset-bottom,0px) + 88px);
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div>
+      <h1>Neighbourhood Watch</h1>
+      <div class="locale">South Coast, KZN</div>
+    </div>
+    <button id="refresh-btn">Refresh</button>
+  </header>
+
+  <div id="map-wrap">
+    <div id="map"></div>
+
+    <div id="search-wrap">
+      <div id="search-box">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="search-input" placeholder="Search an address…" autocomplete="off">
+        <button id="search-clear">✕</button>
+      </div>
+      <div id="search-results"></div>
+    </div>
+
+    <button id="locate-btn" title="Use my location">📍</button>
+    <div id="tap-hint"><span>Tap the map to report something there</span></div>
+
+    <!-- filter bar — category row + time row -->
+    <div id="filter-bar">
+      <div class="filter-row" id="cat-filter-row">
+        <button class="filter-pill active" data-cat="all"><span class="fp-icon">🗺️</span>All</button>
+        <button class="filter-pill" data-cat="suspicious"><span class="fp-icon">👀</span>Suspicious</button>
+        <button class="filter-pill" data-cat="fire"><span class="fp-icon">🔥</span>Fire</button>
+        <button class="filter-pill" data-cat="flood"><span class="fp-icon">💧</span>Flood</button>
+        <button class="filter-pill" data-cat="electrical"><span class="fp-icon">⚡</span>Electrical</button>
+        <button class="filter-pill" data-cat="water"><span class="fp-icon">🚰</span>Water</button>
+        <button class="filter-pill" data-cat="other"><span class="fp-icon">📋</span>Other</button>
+      </div>
+      <div class="filter-row" id="time-filter-row">
+        <button class="filter-pill active" data-time="ever">Ever</button>
+        <button class="filter-pill" data-time="today">Today</button>
+        <button class="filter-pill" data-time="week">Past week</button>
+        <button class="filter-pill" data-time="month">Past month</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="sheet-backdrop"></div>
+<div id="sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-scroll">
+    <div class="sheet-title">New report</div>
+    <p class="sheet-sub">Reports are reviewed before they're shown on the map. Nothing is posted publicly until approved.</p>
+
+    <div class="loc-chip">📍 <span>Location set — <b>tap or drag the pin</b> on the map to change it</span></div>
+
+    <label style="margin-top:16px;">Category</label>
+    <div id="category-row"></div>
+
+    <div id="ref-nr-field">
+      <label>Municipal reference number <span style="text-transform:none;font-weight:500;">(optional)</span></label>
+      <input type="text" id="ref-nr-input" placeholder="e.g. WC-2026-04471" maxlength="40">
+      <div class="hint">If you've already logged this with the municipality, add the reference number so it can be tracked.</div>
+    </div>
+
+    <label>When did this happen</label>
+    <input type="datetime-local" id="incident-datetime">
+
+    <label>Name <span style="text-transform:none;font-weight:500;">(optional)</span></label>
+    <input type="text" id="reporter-name" placeholder="Your name" maxlength="60">
+
+    <label>What's happening</label>
+    <textarea id="report-message" placeholder="Describe what you saw — be specific about location, time, and what to look out for." maxlength="600"></textarea>
+
+    <label>Photo <span style="text-transform:none;font-weight:500;">(optional)</span></label>
+    <div id="photo-row">
+      <button class="photo-btn" id="photo-btn">Add photo</button>
+      <img id="photo-preview">
+      <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none;">
+    </div>
+
+    <button id="submit-btn" disabled>Submit report</button>
+    <button id="cancel-btn">Cancel</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------- CONFIG ----------
+const API_BASE = "https://neighbourhood-watch-api.morneydeetlefs.workers.dev/api";
+const DEFAULT_CENTER = [-30.466053, 30.641500]; // Elysium neighbourhood centroid
+const DEFAULT_ZOOM = 15;
+
+// ---------- MAP SETUP ----------
+// Restore last position from localStorage, or fall back to neighbourhood centroid
+function getSavedView() {
+  try {
+    const s = localStorage.getItem('nw_map_view');
+    if (!s) return null;
+    const v = JSON.parse(s);
+    if (typeof v.lat === 'number' && typeof v.lng === 'number' && typeof v.zoom === 'number') return v;
+  } catch {}
+  return null;
+}
+const savedView = getSavedView();
+const initCenter = savedView ? [savedView.lat, savedView.lng] : DEFAULT_CENTER;
+const initZoom   = savedView ? savedView.zoom : DEFAULT_ZOOM;
+const map = L.map('map', { zoomControl:false }).setView(initCenter, initZoom);
+L.control.zoom({ position:'bottomright' }).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution:'&copy; OpenStreetMap contributors',
+  maxZoom:19
+}).addTo(map);
+
+const CATEGORIES = [
+  { id:'suspicious',  label:'Suspicious activity', icon:'👀', color:'#c15a34', needsRef:false },
+  { id:'fire',        label:'Fire',                icon:'🔥', color:'#c73e3e', needsRef:false },
+  { id:'flood',       label:'Flood',                icon:'💧', color:'#2f6b8a', needsRef:false },
+  { id:'electrical',  label:'Electrical fault',     icon:'⚡', color:'#b8862c', needsRef:true  },
+  { id:'water',       label:'Water supply fault',   icon:'🚰', color:'#2f6b52', needsRef:true  },
+  { id:'other',       label:'Other',                icon:'•',  color:'#5a6672', needsRef:false }
+];
+let selectedCategory = null;
+
+function pinIcon(){ return L.divIcon({ className:'', html:'<div class="drop-marker"></div>', iconSize:[30,30], iconAnchor:[15,28] }); }
+function approvedIcon(categoryId){
+  const cat = CATEGORIES.find(c => c.id === categoryId) || CATEGORIES[CATEGORIES.length-1];
+  return L.divIcon({
+    className:'',
+    html:`<div class="pin-marker approved" style="background:${cat.color}"><span>${cat.icon}</span></div>`,
+    iconSize:[26,26], iconAnchor:[13,24]
+  });
+}
+
+// ---------- DRAFT REPORT PIN + CONFIRM POPUP ----------
+let draftMarker = null;
+let pendingLatLng = null;
+let reportFlowActive = false; // true once "Yes, continue" has been tapped (sheet open)
+
+function confirmPopupHtml(){
+  return `<div class="confirm-popup">
+    <div class="ct">Report something here?</div>
+    <div class="cs">Drag the pin to fine-tune the spot, then confirm.</div>
+    <button class="confirm-yes-btn">Yes, continue</button>
+  </div>`;
+}
+
+function placeOrMoveDraft(lat, lng){
+  pendingLatLng = { lat, lng };
+  if (!draftMarker){
+    draftMarker = L.marker([lat, lng], { icon: pinIcon(), draggable:true }).addTo(map);
+    draftMarker.on('dragend', e => {
+      const p = e.target.getLatLng();
+      pendingLatLng = { lat:p.lat, lng:p.lng };
+      if (!reportFlowActive) draftMarker.openPopup();
+    });
+  } else {
+    draftMarker.setLatLng([lat, lng]);
+  }
+}
+
+map.on('click', e => {
+  if (reportFlowActive){
+    // sheet is already open — just move the pin, no need to re-confirm
+    placeOrMoveDraft(e.latlng.lat, e.latlng.lng);
+    return;
+  }
+  placeOrMoveDraft(e.latlng.lat, e.latlng.lng);
+  draftMarker.bindPopup(confirmPopupHtml()).openPopup();
+  document.getElementById('tap-hint').style.display = 'none';
+});
+
+// wire the "Yes, continue" button each time a popup opens (content is rebuilt each time)
+map.on('popupopen', e => {
+  const btn = e.popup._contentNode && e.popup._contentNode.querySelector('.confirm-yes-btn');
+  if (btn){
+    btn.onclick = () => {
+      draftMarker.closePopup();
+      reportFlowActive = true;
+      openSheet();
+    };
+  }
+});
+
+document.getElementById('locate-btn').onclick = () => {
+  if (!navigator.geolocation) return showToast("Location isn't available on this device");
+  navigator.geolocation.getCurrentPosition(
+    pos => map.setView([pos.coords.latitude, pos.coords.longitude], 16),
+    () => showToast("Couldn't get your location")
+  );
+};
+
+// ---------- ADDRESS SEARCH (Nominatim / OpenStreetMap — free, no key) ----------
+const searchInput = document.getElementById('search-input');
+const searchResultsEl = document.getElementById('search-results');
+const searchClear = document.getElementById('search-clear');
+let searchDebounce;
+
+searchInput.addEventListener('input', () => {
+  searchClear.style.display = searchInput.value ? 'block' : 'none';
+  clearTimeout(searchDebounce);
+  const q = searchInput.value.trim();
+  if (q.length < 3){ hideResults(); return; }
+  // debounce to stay polite to Nominatim's free public endpoint
+  searchDebounce = setTimeout(() => runSearch(q), 500);
+});
+searchClear.onclick = () => { searchInput.value=''; searchClear.style.display='none'; hideResults(); };
+
+async function runSearch(q){
+  try{
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=0&limit=5&q=${encodeURIComponent(q)}`);
+    const results = await res.json();
+    renderResults(results);
+  }catch(err){
+    renderResults([]);
+  }
+}
+function renderResults(results){
+  if (!results.length){
+    searchResultsEl.innerHTML = `<div class="search-empty">No matches found</div>`;
+    searchResultsEl.style.display = 'block';
+    return;
+  }
+  searchResultsEl.innerHTML = results.map(r =>
+    `<div class="search-result" data-lat="${r.lat}" data-lng="${r.lon}">${escapeHtml(r.display_name)}</div>`
+  ).join('');
+  searchResultsEl.style.display = 'block';
+  searchResultsEl.querySelectorAll('.search-result').forEach(el => {
+    el.onclick = () => {
+      const lat = parseFloat(el.dataset.lat), lng = parseFloat(el.dataset.lng);
+      map.setView([lat, lng], 17);
+      placeOrMoveDraft(lat, lng);
+      draftMarker.bindPopup(confirmPopupHtml()).openPopup();
+      document.getElementById('tap-hint').style.display = 'none';
+      hideResults();
+      searchInput.blur();
+    };
+  });
+}
+function hideResults(){ searchResultsEl.style.display='none'; searchResultsEl.innerHTML=''; }
+
+// ---------- FILTERS ----------
+let activeCat  = 'all';
+let activeTime = 'ever';
+let allReports = [];  // full dataset — filters applied client-side
+
+function timeFilterMs(key) {
+  const now = Date.now();
+  if (key === 'today') return now - 24 * 60 * 60 * 1000;
+  if (key === 'week')  return now - 7  * 24 * 60 * 60 * 1000;
+  if (key === 'month') return now - 30 * 24 * 60 * 60 * 1000;
+  return 0; // 'ever'
+}
+
+function applyFilters() {
+  const since = timeFilterMs(activeTime);
+  reportMarkers.forEach(({ marker, report }) => {
+    const catMatch  = activeCat === 'all' || report.category === activeCat;
+    const timeMatch = since === 0 || new Date(report.created_at + 'Z').getTime() >= since;
+    if (catMatch && timeMatch) {
+      if (!map.hasLayer(marker)) marker.addTo(map);
+    } else {
+      if (map.hasLayer(marker)) map.removeLayer(marker);
+    }
+  });
+}
+
+document.getElementById('cat-filter-row').addEventListener('click', e => {
+  const pill = e.target.closest('.filter-pill');
+  if (!pill) return;
+  activeCat = pill.dataset.cat;
+  document.querySelectorAll('#cat-filter-row .filter-pill').forEach(p => p.classList.toggle('active', p === pill));
+  applyFilters();
+});
+
+document.getElementById('time-filter-row').addEventListener('click', e => {
+  const pill = e.target.closest('.filter-pill');
+  if (!pill) return;
+  activeTime = pill.dataset.time;
+  document.querySelectorAll('#time-filter-row .filter-pill').forEach(p => p.classList.toggle('active', p === pill));
+  applyFilters();
+});
+
+// ---------- LOAD APPROVED REPORTS ----------
+let reportMarkers = []; // array of { marker, report }
+
+async function loadReports(){
+  try{
+    const res = await fetch(`${API_BASE}/reports?status=approved`);
+    if (!res.ok) throw new Error('fetch failed');
+    allReports = await res.json();
+
+    reportMarkers.forEach(({ marker }) => map.removeLayer(marker));
+    reportMarkers = allReports.map(r => {
+      const cat = CATEGORIES.find(c => c.id === r.category) || CATEGORIES[CATEGORIES.length - 1];
+      const marker = L.marker([r.lat, r.lng], { icon: approvedIcon(r.category) });
+
+      const imgHtml  = r.image_key ? `<img src="${API_BASE}/reports/${r.id}/image" loading="lazy">` : '';
+      const refHtml  = r.ref_nr    ? `<div>Ref: ${escapeHtml(r.ref_nr)}</div>` : '';
+      const whenHtml = r.incident_at
+        ? `<div>Happened: ${new Date(r.incident_at).toLocaleString('en-ZA', { dateStyle:'medium', timeStyle:'short' })}</div>`
+        : '';
+
+      marker.bindPopup(`
+        <div class="rep-popup">
+          <div class="rep-cat" style="color:${cat.color}">
+            <span>${cat.icon}</span>${escapeHtml(cat.label)}
+          </div>
+          <div class="rep-msg">${escapeHtml(r.message)}</div>
+          <div class="rep-meta">
+            <div>${timeAgo(r.created_at)}</div>
+            ${whenHtml}
+            ${refHtml}
+          </div>
+          ${imgHtml}
+        </div>
+      `);
+
+      marker.addTo(map);
+      return { marker, report: r };
+    });
+
+    applyFilters(); // re-apply current filter after reload
+  }catch(err){
+    showToast("Couldn't load reports — check your connection");
+  }
+}
+function escapeHtml(s){
+  return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function timeAgo(iso){
+  const diff = Math.floor((Date.now() - new Date(iso+'Z').getTime())/60000);
+  if (diff < 1) return 'just now';
+  if (diff < 60) return `${diff}m ago`;
+  if (diff < 1440) return `${Math.floor(diff/60)}h ago`;
+  return `${Math.floor(diff/1440)}d ago`;
+}
+document.getElementById('refresh-btn').onclick = loadReports;
+
+// ---------- SHEET (message + photo, opened after location is confirmed) ----------
+const sheet = document.getElementById('sheet');
+const backdrop = document.getElementById('sheet-backdrop');
+
+function renderCategoryChips(){
+  const row = document.getElementById('category-row');
+  row.innerHTML = CATEGORIES.map(c =>
+    `<button type="button" class="cat-chip" data-cat="${c.id}"><span class="cat-icon">${c.icon}</span>${c.label}</button>`
+  ).join('');
+  row.querySelectorAll('.cat-chip').forEach(chip => {
+    chip.onclick = () => {
+      selectedCategory = chip.dataset.cat;
+      row.querySelectorAll('.cat-chip').forEach(c => c.classList.toggle('selected', c === chip));
+      const cat = CATEGORIES.find(c => c.id === selectedCategory);
+      document.getElementById('ref-nr-field').style.display = cat && cat.needsRef ? 'block' : 'none';
+      updateSubmitState();
+    };
+  });
+}
+renderCategoryChips();
+
+function openSheet(){
+  sheet.classList.add('open');
+  backdrop.classList.add('open');
+  const savedName = localStorage.getItem('nw_reporter_name');
+  if (savedName) document.getElementById('reporter-name').value = savedName;
+  // default "when did this happen" to now, in local time, editable
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  document.getElementById('incident-datetime').value = now.toISOString().slice(0,16);
+}
+function closeSheet(){
+  sheet.classList.remove('open');
+  backdrop.classList.remove('open');
+  reportFlowActive = false;
+  pendingLatLng = null;
+  if (draftMarker){ map.removeLayer(draftMarker); draftMarker = null; }
+  document.getElementById('tap-hint').style.display = 'block';
+  selectedCategory = null;
+  document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('selected'));
+  document.getElementById('ref-nr-field').style.display = 'none';
+  document.getElementById('ref-nr-input').value = '';
+  resetForm();
+}
+document.getElementById('cancel-btn').onclick = closeSheet;
+
+// ---------- PHOTO ----------
+let photoFile = null;
+document.getElementById('photo-btn').onclick = () => document.getElementById('photo-input').click();
+document.getElementById('photo-input').onchange = e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  photoFile = file;
+  const preview = document.getElementById('photo-preview');
+  preview.src = URL.createObjectURL(file);
+  preview.style.display = 'block';
+};
+
+// ---------- FORM STATE ----------
+const messageInput = document.getElementById('report-message');
+messageInput.addEventListener('input', updateSubmitState);
+function updateSubmitState(){
+  document.getElementById('submit-btn').disabled = !(pendingLatLng && selectedCategory && messageInput.value.trim().length > 0);
+}
+function resetForm(){
+  photoFile = null;
+  messageInput.value = '';
+  document.getElementById('photo-preview').style.display = 'none';
+  document.getElementById('photo-preview').src = '';
+  updateSubmitState();
+}
+
+// ---------- SUBMIT ----------
+document.getElementById('submit-btn').onclick = async () => {
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Submitting…';
+
+  const name = document.getElementById('reporter-name').value.trim();
+  if (name) localStorage.setItem('nw_reporter_name', name);
+
+  try{
+    let image_key = null;
+    if (photoFile){
+      const fd = new FormData();
+      fd.append('image', photoFile);
+      const upRes = await fetch(`${API_BASE}/reports/image-upload`, { method:'POST', body:fd });
+      if (!upRes.ok) throw new Error('image upload failed');
+      const upJson = await upRes.json();
+      image_key = upJson.image_key;
+    }
+
+    const res = await fetch(`${API_BASE}/reports`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        lat: pendingLatLng.lat,
+        lng: pendingLatLng.lng,
+        category: selectedCategory,
+        ref_nr: document.getElementById('ref-nr-input').value.trim() || null,
+        incident_at: document.getElementById('incident-datetime').value
+          ? new Date(document.getElementById('incident-datetime').value).toISOString()
+          : null,
+        message: messageInput.value.trim(),
+        reporter_contact: name || null,
+        image_key
+      })
+    });
+    if (!res.ok) throw new Error('submit failed');
+
+    closeSheet();
+    showToast("Report submitted — it'll appear once reviewed");
+  }catch(err){
+    showToast("Couldn't submit — check your connection and try again");
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Submit report';
+  }
+};
+
+// ---------- TOAST ----------
+let toastTimer;
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+// ---------- PWA ----------
+if ('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+
+// ---------- SAVE MAP POSITION ----------
+function saveMapView() {
+  const c = map.getCenter();
+  localStorage.setItem('nw_map_view', JSON.stringify({ lat: c.lat, lng: c.lng, zoom: map.getZoom() }));
+}
+map.on('moveend', saveMapView);
+map.on('zoomend', saveMapView);
+
+// ---------- INIT ----------
+loadReports();
+setInterval(loadReports, 60000);
+</script>
+</body>
+</html>

@@ -1,0 +1,1548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#f0a500" />
+<link rel="manifest" href="/admin/manifest.json" />
+<title>ElysiumWatch — Admin</title>
+<style>
+  /* ── Tokens ── */
+  :root {
+    --bg:        #0f1117;
+    --surface:   #181c27;
+    --border:    #252b3b;
+    --text:      #e8eaf0;
+    --muted:     #6b7492;
+    --accent:    #4f8ef7;   /* action blue */
+    --approve:   #2dbd7e;
+    --reject:    #e05c5c;
+    --warn:      #f0a500;
+
+    --cat-suspicious: #e05c5c;
+    --cat-fire:       #ff7043;
+    --cat-flood:      #4f8ef7;
+    --cat-electrical: #f0a500;
+    --cat-water:      #26c6da;
+    --cat-other:      #9e9e9e;
+
+    --radius: 8px;
+    --font: 'Inter', system-ui, sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100dvh;
+  }
+
+  /* ── Login screen ── */
+  #login-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100dvh;
+    gap: 24px;
+    padding: 24px;
+  }
+
+  .login-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+
+  .login-logo svg { opacity: 0.9; }
+
+  .login-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    width: 100%;
+    max-width: 360px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .login-card h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .login-card p {
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  input[type="password"],
+  input[type="text"],
+  textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    padding: 10px 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  input:focus, textarea:focus {
+    border-color: var(--accent);
+  }
+
+  textarea { resize: vertical; min-height: 72px; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    border: none;
+    font-family: var(--font);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+    white-space: nowrap;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .btn-primary  { background: var(--accent);  color: #fff; width: 100%; }
+  .btn-approve  { background: var(--approve); color: #fff; }
+  .btn-reject   { background: var(--reject);  color: #fff; }
+  .btn-ghost    { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+
+  .error-msg {
+    font-size: 13px;
+    color: var(--reject);
+    display: none;
+  }
+  .error-msg.show { display: block; }
+
+  /* ── App shell ── */
+  #app { display: none; flex-direction: column; min-height: 100dvh; }
+  #app.visible { display: flex; }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: -0.2px;
+  }
+
+  .badge {
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 99px;
+    min-width: 20px;
+    text-align: center;
+  }
+
+  .badge.zero { background: var(--border); color: var(--muted); }
+
+  .header-right { display: flex; align-items: center; gap: 10px; }
+
+  #logout-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 12px;
+    padding: 5px 12px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-family: var(--font);
+    transition: color 0.15s, border-color 0.15s;
+  }
+  #logout-btn:hover { color: var(--text); border-color: var(--muted); }
+
+  /* ── Queue ── */
+  #queue {
+    flex: 1;
+    padding: 20px;
+    max-width: 780px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  .queue-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 80px 24px;
+    color: var(--muted);
+    text-align: center;
+  }
+
+  .queue-empty svg { opacity: 0.3; }
+  .queue-empty p { font-size: 15px; }
+  .queue-empty small { font-size: 13px; opacity: 0.7; }
+
+  /* ── Report card ── */
+  .report-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 16px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+
+  .report-card.leaving {
+    opacity: 0;
+    transform: translateX(24px);
+    transition: opacity 0.25s, transform 0.25s;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .cat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    padding: 3px 9px;
+    border-radius: 99px;
+    border: 1px solid;
+  }
+
+  .cat-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .card-meta {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    align-items: center;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .card-body {
+    padding: 14px 16px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+  }
+
+  .card-body.no-photo { grid-template-columns: 1fr; }
+
+  .report-message {
+    font-size: 14px;
+    color: var(--text);
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .report-details {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 10px;
+  }
+
+  .detail-row {
+    display: flex;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .detail-row strong {
+    color: var(--text);
+    font-weight: 500;
+    min-width: 60px;
+  }
+
+  .photo-thumb {
+    width: 140px;
+    height: 140px;
+    object-fit: cover;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: opacity 0.15s;
+  }
+  .photo-thumb:hover { opacity: 0.85; }
+
+  /* ── Collapsible sections ── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 28px 0 0;
+    cursor: pointer;
+    user-select: none;
+    padding: 10px 0;
+  }
+  .section-header h2 {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .section-header hr {
+    flex: 1;
+    border: none;
+    border-top: 1px solid var(--border);
+  }
+  .section-chevron {
+    font-size: 11px;
+    color: var(--muted);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+  }
+  .section-header.collapsed .section-chevron { transform: rotate(-90deg); }
+  .section-body {
+    overflow: hidden;
+    transition: max-height 0.25s ease;
+  }
+  .section-body.collapsed { max-height: 0 !important; }
+
+  /* ── Static map thumbnail ── */
+  .map-thumb-wrap {
+    position: relative;
+    width: 100%;
+    height: 110px;
+    margin-top: 10px;
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .map-thumb-wrap iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    pointer-events: none;
+  }
+  .map-thumb-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.18);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .map-thumb-wrap:hover .map-thumb-overlay { opacity: 1; }
+  .map-thumb-overlay span {
+    background: rgba(0,0,0,0.65);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 99px;
+  }
+
+  /* ── Map modal ── */
+  #map-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.88);
+    z-index: 1001;
+    flex-direction: column;
+  }
+  #map-modal.open { display: flex; }
+  #map-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #map-modal-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  #map-modal-close {
+    background: var(--border);
+    border: none;
+    color: var(--text);
+    font-size: 18px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font);
+    transition: background 0.15s;
+  }
+  #map-modal-close:hover { background: var(--muted); }
+  #map-modal iframe {
+    flex: 1;
+    width: 100%;
+    border: none;
+  }
+
+  /* ── Age indicator ── */
+  .age-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 99px;
+    flex-shrink: 0;
+  }
+  .age-badge.fresh  { background: rgba(224,92,92,0.15); color: var(--reject); }
+  .age-badge.recent { background: rgba(240,165,0,0.15);  color: var(--warn); }
+  .age-badge.old    { background: rgba(107,116,146,0.12); color: var(--muted); }
+
+  /* ── History section ── */
+  .section-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 28px 0 16px;
+  }
+  .section-divider h2 {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .section-divider hr {
+    flex: 1;
+    border: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .card-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    background: rgba(0,0,0,0.15);
+  }
+
+  /* ── Reject reason inline ── */
+  .reject-panel {
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    background: rgba(224,92,92,0.07);
+  }
+  .reject-panel.open { display: flex; }
+  .reject-panel label { font-size: 12px; color: var(--muted); }
+  .reject-panel .reject-actions { display: flex; gap: 8px; }
+
+  /* ── Photo lightbox ── */
+  #lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.88);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    cursor: zoom-out;
+  }
+  #lightbox.open { display: flex; }
+  #lightbox img {
+    max-width: 100%;
+    max-height: 90dvh;
+    object-fit: contain;
+    border-radius: var(--radius);
+    cursor: default;
+    pointer-events: none;
+  }
+
+  /* ── Loading / toast ── */
+  #loading {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 500;
+    transition: opacity 0.3s;
+  }
+  #loading.fade { opacity: 0; pointer-events: none; }
+
+  .spinner {
+    width: 28px; height: 28px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 18px;
+    font-size: 13px;
+    font-weight: 500;
+    z-index: 900;
+    transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+  #toast.ok   { border-color: var(--approve); color: var(--approve); }
+  #toast.err  { border-color: var(--reject);  color: var(--reject); }
+
+  @media (max-width: 520px) {
+    .photo-thumb { width: 90px; height: 90px; }
+    .card-body { gap: 8px; }
+    #queue { padding: 12px; }
+  }
+
+  /* ── Filter bar ── */
+  .filter-bar {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 16px;
+  }
+  .filter-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 99px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .filter-btn:hover { color: var(--text); border-color: var(--muted); }
+  .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* ── Status pill on history cards ── */
+  .status-pill {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2px 8px;
+    border-radius: 99px;
+  }
+  .status-pill.approved { background: rgba(45,189,126,0.15); color: var(--approve); }
+  .status-pill.rejected { background: rgba(224,92,92,0.15);  color: var(--reject); }
+
+  /* ── Re-review panel (on history cards) ── */
+  .rereview-panel {
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    background: rgba(0,0,0,0.15);
+  }
+  .rereview-panel.open { display: flex; }
+  .rereview-panel label { font-size: 12px; color: var(--muted); }
+  .rereview-panel .rereview-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .history-empty {
+    text-align: center;
+    padding: 32px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  /* ── Push notification button ── */
+  #push-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 12px;
+    font-family: var(--font);
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    white-space: nowrap;
+  }
+  #push-btn:hover { color: var(--text); border-color: var(--muted); }
+  #push-btn.subscribed {
+    border-color: var(--approve);
+    color: var(--approve);
+    background: rgba(45,189,126,0.08);
+  }
+  #push-btn.subscribed:hover {
+    background: rgba(224,92,92,0.08);
+    border-color: var(--reject);
+    color: var(--reject);
+  }
+  #push-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  #push-btn.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loading"><div class="spinner"></div></div>
+
+<!-- Login screen -->
+<div id="login-screen">
+  <div class="login-logo">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="14" cy="14" r="13" stroke="#4f8ef7" stroke-width="2"/>
+      <path d="M14 7 L20 11 L20 17 L14 21 L8 17 L8 11 Z" stroke="#4f8ef7" stroke-width="1.5" fill="none"/>
+      <circle cx="14" cy="14" r="3" fill="#4f8ef7"/>
+    </svg>
+    ElysiumWatch
+  </div>
+  <div class="login-card">
+    <h2>Admin access</h2>
+    <p>Enter your admin passcode to review pending reports.</p>
+    <input type="password" id="passcode-input" placeholder="Passcode" autocomplete="current-password" />
+    <div class="error-msg" id="login-error">Incorrect passcode — try again.</div>
+    <button class="btn btn-primary" id="login-btn">Sign in</button>
+  </div>
+</div>
+
+<!-- App shell -->
+<div id="app">
+  <header>
+    <div class="header-left">
+      <svg width="22" height="22" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="14" cy="14" r="13" stroke="#4f8ef7" stroke-width="2"/>
+        <path d="M14 7 L20 11 L20 17 L14 21 L8 17 L8 11 Z" stroke="#4f8ef7" stroke-width="1.5" fill="none"/>
+        <circle cx="14" cy="14" r="3" fill="#4f8ef7"/>
+      </svg>
+      Moderation queue
+    </div>
+    <div class="header-right">
+      <button id="push-btn" class="hidden" title="Enable push notifications for new reports">🔔 Enable alerts</button>
+      <button class="btn btn-ghost" id="refresh-btn" style="padding:6px 12px;font-size:13px;">↻ Refresh</button>
+      <button id="logout-btn">Sign out</button>
+    </div>
+  </header>
+
+  <div style="max-width:780px;width:100%;margin:0 auto;padding:0 20px;">
+
+    <!-- Moderation queue section -->
+    <div class="section-header" id="queue-section-header" data-section="queue">
+      <h2>Moderation queue <span class="badge zero" id="queue-badge" style="margin-left:6px;">0</span></h2>
+      <hr />
+      <span class="section-chevron">▼</span>
+    </div>
+    <div class="section-body" id="queue-section-body">
+      <div id="queue" style="padding-bottom:8px;">
+        <!-- cards injected here -->
+      </div>
+    </div>
+
+    <!-- History section -->
+    <div class="section-header" id="history-section-header" data-section="history">
+      <h2>History</h2>
+      <hr />
+      <span class="section-chevron">▼</span>
+    </div>
+    <div class="section-body" id="history-section-body">
+      <div style="padding-bottom:40px;">
+        <div class="filter-bar" style="margin-top:12px;">
+          <button class="filter-btn active" data-filter="all">All</button>
+          <button class="filter-btn" data-filter="approved">Approved</button>
+          <button class="filter-btn" data-filter="rejected">Rejected</button>
+        </div>
+        <div id="history-list">
+          <!-- history cards injected here -->
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Map modal -->
+<div id="map-modal">
+  <div id="map-modal-header">
+    <span id="map-modal-title">Report location</span>
+    <button id="map-modal-close" title="Close">✕</button>
+  </div>
+  <iframe id="map-modal-iframe" src="" title="Report location" allowfullscreen></iframe>
+</div>
+
+<!-- Photo lightbox -->
+<div id="lightbox">
+  <img id="lightbox-img" src="" alt="Report photo" />
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+const API = 'https://neighbourhood-watch-api.morneydeetlefs.workers.dev';
+
+// ── VAPID public key — paste the output of your key-gen one-liner here ──
+// e.g. 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8'
+const VAPID_PUBLIC_KEY = 'BIwSLIxZi6yFxWJeaCK4ZiaKTr9jZdcNDrIDjfgW3XNWGr_pT3uaFWv_2XnLI5p5xlgvS5_z375Wyzwc9GpChV0';
+
+// ── State ──
+let adminKey = '';
+
+// ── DOM refs ──
+const loginScreen  = document.getElementById('login-screen');
+const app          = document.getElementById('app');
+const passcodeInput= document.getElementById('passcode-input');
+const loginBtn     = document.getElementById('login-btn');
+const loginError   = document.getElementById('login-error');
+const queueEl      = document.getElementById('queue');
+const queueBadge   = document.getElementById('queue-badge');
+const loading      = document.getElementById('loading');
+const lightbox     = document.getElementById('lightbox');
+const lightboxImg  = document.getElementById('lightbox-img');
+const toastEl      = document.getElementById('toast');
+const historyList  = document.getElementById('history-list');
+const filterBtns   = document.querySelectorAll('.filter-btn');
+const mapModal     = document.getElementById('map-modal');
+const mapModalIframe = document.getElementById('map-modal-iframe');
+const mapModalTitle  = document.getElementById('map-modal-title');
+document.getElementById('map-modal-close').addEventListener('click', closeMapModal);
+mapModal.addEventListener('click', e => { if (e.target === mapModal) closeMapModal(); });
+
+function openMapModal(src, title) {
+  mapModalIframe.src = src;
+  mapModalTitle.textContent = title || 'Report location';
+  mapModal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeMapModal() {
+  mapModal.classList.remove('open');
+  mapModalIframe.src = '';
+  document.body.style.overflow = '';
+}
+
+// ── History state ──
+let allHistory = [];      // full fetched list
+let historyFilter = 'all'; // 'all' | 'approved' | 'rejected'
+
+// ── Helpers ──
+function hideLoading() {
+  loading.classList.add('fade');
+  setTimeout(() => loading.remove(), 400);
+}
+
+let toastTimer;
+function showToast(msg, type = 'ok') {
+  toastEl.textContent = msg;
+  toastEl.className = `show ${type}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toastEl.className = ''; }, 2800);
+}
+
+function apiHeaders() {
+  return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminKey}` };
+}
+
+// ── Category helpers ──
+const CAT_LABELS = {
+  suspicious: 'Suspicious activity',
+  fire:       'Fire',
+  flood:      'Flood',
+  electrical: 'Electrical fault',
+  water:      'Water supply fault',
+  other:      'Other',
+};
+const CAT_COLORS = {
+  suspicious: 'var(--cat-suspicious)',
+  fire:       'var(--cat-fire)',
+  flood:      'var(--cat-flood)',
+  electrical: 'var(--cat-electrical)',
+  water:      'var(--cat-water)',
+  other:      'var(--cat-other)',
+};
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso.includes('T') ? iso : iso + 'Z');
+  return d.toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+// ── Age badge ──
+function ageBadge(iso) {
+  const mins = Math.floor((Date.now() - new Date(iso.includes('T') ? iso : iso + 'Z').getTime()) / 60000);
+  if (mins < 60)   return `<span class="age-badge fresh">🔴 ${mins}m ago</span>`;
+  if (mins < 1440) return `<span class="age-badge recent">🟡 ${Math.floor(mins/60)}h ago</span>`;
+  return `<span class="age-badge old">${Math.floor(mins/1440)}d ago</span>`;
+}
+
+// ── Collapsible sections ──
+const SECTION_DEFAULTS = { queue: true, history: true }; // true = open
+
+function loadSectionStates() {
+  try {
+    const s = localStorage.getItem('ew_sections');
+    return s ? { ...SECTION_DEFAULTS, ...JSON.parse(s) } : { ...SECTION_DEFAULTS };
+  } catch { return { ...SECTION_DEFAULTS }; }
+}
+function saveSectionStates(states) {
+  localStorage.setItem('ew_sections', JSON.stringify(states));
+}
+
+let sectionStates = loadSectionStates();
+
+function applySection(name) {
+  const header = document.getElementById(`${name}-section-header`);
+  const body   = document.getElementById(`${name}-section-body`);
+  if (!header || !body) return;
+  const open = sectionStates[name] !== false;
+  header.classList.toggle('collapsed', !open);
+  if (open) {
+    body.classList.remove('collapsed');
+    body.style.maxHeight = body.scrollHeight + 'px';
+  } else {
+    body.style.maxHeight = body.scrollHeight + 'px'; // set before collapse for transition
+    requestAnimationFrame(() => body.classList.add('collapsed'));
+  }
+}
+
+function toggleSection(name) {
+  sectionStates[name] = !sectionStates[name];
+  saveSectionStates(sectionStates);
+  applySection(name);
+}
+
+document.querySelectorAll('.section-header').forEach(h => {
+  h.addEventListener('click', () => toggleSection(h.dataset.section));
+});
+
+// ── Auth ──
+function saveKey(key) {
+  adminKey = key;
+  sessionStorage.setItem('ew_admin_key', key);
+}
+function loadKey() {
+  return sessionStorage.getItem('ew_admin_key') || '';
+}
+function clearKey() {
+  adminKey = '';
+  sessionStorage.removeItem('ew_admin_key');
+}
+
+// ── Login ──
+async function tryLogin(key) {
+  loginBtn.disabled = true;
+  loginBtn.textContent = 'Checking…';
+  loginError.classList.remove('show');
+
+  try {
+    const res = await fetch(`${API}/api/admin/reports`, {
+      headers: { 'Authorization': `Bearer ${key}` }
+    });
+
+    if (res.status === 401) {
+      loginError.classList.add('show');
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Sign in';
+      return;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const reports = await res.json();
+    saveKey(key);
+    showApp(reports);
+  } catch (err) {
+    loginError.textContent = 'Could not reach the server — try again.';
+    loginError.classList.add('show');
+    loginBtn.disabled = false;
+    loginBtn.textContent = 'Sign in';
+  }
+}
+
+loginBtn.addEventListener('click', () => {
+  const key = passcodeInput.value.trim();
+  if (!key) return;
+  tryLogin(key);
+});
+
+passcodeInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') loginBtn.click();
+});
+
+document.getElementById('logout-btn').addEventListener('click', () => {
+  clearKey();
+  app.classList.remove('visible');
+  loginScreen.style.display = 'flex';
+  passcodeInput.value = '';
+});
+
+// ── App ──
+function showApp(reports) {
+  loginScreen.style.display = 'none';
+  app.classList.add('visible');
+  renderQueue(reports);
+  fetchHistory();
+  initPush();
+  // Apply saved collapsed states after content is rendered
+  requestAnimationFrame(() => {
+    applySection('queue');
+    applySection('history');
+  });
+}
+
+// ── Fetch queue ──
+async function fetchQueue() {
+  try {
+    const res = await fetch(`${API}/api/admin/reports`, { headers: apiHeaders() });
+    if (res.status === 401) { clearKey(); location.reload(); return; }
+    if (!res.ok) throw new Error();
+    const reports = await res.json();
+    renderQueue(reports);
+  } catch {
+    showToast('Failed to refresh queue', 'err');
+  }
+}
+
+// ── Fetch history ──
+async function fetchHistory() {
+  try {
+    const res = await fetch(`${API}/api/admin/reports/history`, { headers: apiHeaders() });
+    if (res.status === 401) { clearKey(); location.reload(); return; }
+    if (!res.ok) throw new Error();
+    allHistory = await res.json();
+    renderHistory();
+  } catch {
+    historyList.innerHTML = '<div class="history-empty">Could not load history.</div>';
+  }
+}
+
+document.getElementById('refresh-btn').addEventListener('click', () => { fetchQueue(); fetchHistory(); });
+
+// ── Filter buttons ──
+filterBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    historyFilter = btn.dataset.filter;
+    filterBtns.forEach(b => b.classList.toggle('active', b === btn));
+    renderHistory();
+  });
+});
+
+// ── Render ──
+function renderQueue(reports) {
+  queueBadge.textContent = reports.length;
+  queueBadge.className = 'badge' + (reports.length === 0 ? ' zero' : '');
+
+  if (reports.length === 0) {
+    queueEl.innerHTML = `
+      <div class="queue-empty">
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="24" cy="24" r="22" stroke="currentColor" stroke-width="2"/>
+          <path d="M16 24l6 6 10-12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <p>Queue is clear</p>
+        <small>New reports from residents will appear here for review.</small>
+      </div>`;
+  } else {
+    queueEl.innerHTML = '';
+    reports.forEach(r => queueEl.appendChild(buildCard(r)));
+  }
+
+  // Re-measure section height so collapse transition works correctly
+  const body = document.getElementById('queue-section-body');
+  if (body && !body.classList.contains('collapsed')) {
+    body.style.maxHeight = 'none';
+    requestAnimationFrame(() => { body.style.maxHeight = body.scrollHeight + 'px'; });
+  }
+}
+
+// ── History render ──
+function renderHistory() {
+  const filtered = historyFilter === 'all'
+    ? allHistory
+    : allHistory.filter(r => r.status === historyFilter);
+
+  if (filtered.length === 0) {
+    historyList.innerHTML = `<div class="history-empty">${
+      allHistory.length === 0
+        ? 'No reviewed reports yet.'
+        : `No ${historyFilter} reports.`
+    }</div>`;
+    return;
+  }
+
+  historyList.innerHTML = '';
+  filtered.forEach(r => historyList.appendChild(buildHistoryCard(r)));
+
+  // Re-measure section height
+  const body = document.getElementById('history-section-body');
+  if (body && !body.classList.contains('collapsed')) {
+    body.style.maxHeight = 'none';
+    requestAnimationFrame(() => { body.style.maxHeight = body.scrollHeight + 'px'; });
+  }
+}
+
+function buildHistoryCard(r) {
+  const color  = CAT_COLORS[r.category] || 'var(--cat-other)';
+  const label  = CAT_LABELS[r.category] || r.category;
+  const hasImg = !!r.image_key;
+  const imgUrl = hasImg ? `${API}/api/admin/reports/${r.id}/image?token=${encodeURIComponent(adminKey)}` : null;
+  const mapSrc = `https://www.openstreetmap.org/export/embed.html?bbox=${r.lng-0.003},${r.lat-0.003},${r.lng+0.003},${r.lat+0.003}&layer=mapnik&marker=${r.lat},${r.lng}`;
+
+  const isApproved = r.status === 'approved';
+
+  const card = document.createElement('div');
+  card.className = 'report-card';
+  card.dataset.id = r.id;
+
+  card.innerHTML = `
+    <div class="card-header">
+      <span class="cat-pill" style="color:${color};border-color:${color}22;background:${color}14;">
+        <span class="cat-dot"></span>${label}
+      </span>
+      <span class="status-pill ${r.status}">${isApproved ? 'Approved' : 'Rejected'}</span>
+      <div class="card-meta">
+        <span>Submitted ${fmtDate(r.created_at)}</span>
+        ${r.reviewed_at ? `<span>Reviewed ${fmtDate(r.reviewed_at)}</span>` : ''}
+        ${r.reporter_contact ? `<span>👤 ${escHtml(r.reporter_contact)}</span>` : '<span style="opacity:0.5">Anonymous</span>'}
+      </div>
+      <span style="font-size:11px;color:var(--muted);font-family:monospace">#${r.id}</span>
+    </div>
+
+    <div class="card-body ${hasImg ? '' : 'no-photo'}">
+      <div>
+        <div class="report-message">${escHtml(r.message)}</div>
+        <div class="report-details">
+          <div class="detail-row">
+            <strong>Location</strong>
+            <span>${r.lat.toFixed(5)}, ${r.lng.toFixed(5)}</span>
+          </div>
+          ${r.ref_nr ? `<div class="detail-row"><strong>Ref nr</strong><span>${escHtml(r.ref_nr)}</span></div>` : ''}
+          ${r.rejection_reason ? `<div class="detail-row"><strong>Reason</strong><span style="color:var(--reject)">${escHtml(r.rejection_reason)}</span></div>` : ''}
+        </div>
+        <div class="map-thumb-wrap" data-mapsrc="${escHtml(mapSrc)}" data-maplabel="${escHtml(label + ' #' + r.id)}">
+          <iframe src="${mapSrc}" frameborder="0" scrolling="no" loading="lazy" title="Report location"></iframe>
+          <div class="map-thumb-overlay"><span>🗺 View full map</span></div>
+        </div>
+      </div>
+      ${hasImg ? `<img class="photo-thumb" src="${imgUrl}" data-id="${r.id}" alt="Report photo" loading="lazy" />` : ''}
+    </div>
+
+    <div class="card-actions">
+      ${isApproved
+        ? `<button class="btn btn-reject"  data-haction="rereject-open"   data-id="${r.id}">✕ Reject…</button>`
+        : `<button class="btn btn-approve" data-haction="reapprove"       data-id="${r.id}">✓ Approve</button>
+           <button class="btn btn-ghost"   data-haction="rereject-open"   data-id="${r.id}" style="border-color:var(--reject);color:var(--reject);">Change reason…</button>`
+      }
+    </div>
+
+    <div class="rereview-panel" id="hrp-${r.id}">
+      <label>${isApproved ? 'Reason for rejection' : 'Update rejection reason'} (optional)</label>
+      <textarea id="hrr-${r.id}" placeholder="e.g. Duplicate report…" rows="2">${escHtml(r.rejection_reason || '')}</textarea>
+      <div class="rereview-actions">
+        <button class="btn btn-reject" data-haction="rereject-confirm" data-id="${r.id}">Confirm rejection</button>
+        <button class="btn btn-ghost"  data-haction="rereject-cancel"  data-id="${r.id}">Cancel</button>
+      </div>
+    </div>
+  `;
+
+  if (hasImg) {
+    card.querySelector('.photo-thumb').addEventListener('click', e => {
+      lightboxImg.src = e.target.src;
+      lightbox.classList.add('open');
+    });
+  }
+
+  // Map thumbnail → modal
+  card.querySelector('.map-thumb-wrap').addEventListener('click', e => {
+    openMapModal(e.currentTarget.dataset.mapsrc, e.currentTarget.dataset.maplabel);
+  });
+
+  card.addEventListener('click', async e => {
+    const btn = e.target.closest('[data-haction]');
+    if (!btn) return;
+    const { haction, id } = btn.dataset;
+    const rid = Number(id);
+
+    if (haction === 'reapprove') {
+      await doReApprove(rid, r, card);
+    } else if (haction === 'rereject-open') {
+      document.getElementById(`hrp-${rid}`).classList.add('open');
+      card.querySelectorAll('[data-haction="rereject-open"],[data-haction="reapprove"]').forEach(b => b.disabled = true);
+    } else if (haction === 'rereject-cancel') {
+      document.getElementById(`hrp-${rid}`).classList.remove('open');
+      card.querySelectorAll('[data-haction="rereject-open"],[data-haction="reapprove"]').forEach(b => b.disabled = false);
+    } else if (haction === 'rereject-confirm') {
+      const reason = document.getElementById(`hrr-${rid}`).value.trim();
+      await doReReject(rid, reason, r, card);
+    }
+  });
+
+  return card;
+}
+
+function buildCard(r) {
+  const color  = CAT_COLORS[r.category] || 'var(--cat-other)';
+  const label  = CAT_LABELS[r.category] || r.category;
+  const hasImg = !!r.image_key;
+
+  const card = document.createElement('div');
+  card.className = 'report-card';
+  card.dataset.id = r.id;
+
+  const imgUrl = hasImg ? `${API}/api/admin/reports/${r.id}/image?token=${encodeURIComponent(adminKey)}` : null;
+  const mapSrc = `https://www.openstreetmap.org/export/embed.html?bbox=${r.lng-0.003},${r.lat-0.003},${r.lng+0.003},${r.lat+0.003}&layer=mapnik&marker=${r.lat},${r.lng}`;
+  const catLabel = `${label} #${r.id}`;
+
+  card.innerHTML = `
+    <div class="card-header">
+      <span class="cat-pill" style="color:${color};border-color:${color}22;background:${color}14;">
+        <span class="cat-dot"></span>${label}
+      </span>
+      ${ageBadge(r.created_at)}
+      <div class="card-meta">
+        <span>Submitted ${fmtDate(r.created_at)}</span>
+        ${r.incident_at ? `<span>Incident ${fmtDate(r.incident_at)}</span>` : ''}
+        ${r.reporter_contact ? `<span>👤 ${escHtml(r.reporter_contact)}</span>` : '<span style="opacity:0.5">Anonymous</span>'}
+      </div>
+      <span style="font-size:11px;color:var(--muted);font-family:monospace">#${r.id}</span>
+    </div>
+
+    <div class="card-body ${hasImg ? '' : 'no-photo'}">
+      <div>
+        <div class="report-message">${escHtml(r.message)}</div>
+        <div class="report-details">
+          <div class="detail-row">
+            <strong>Location</strong>
+            <span>${r.lat.toFixed(5)}, ${r.lng.toFixed(5)}</span>
+          </div>
+          ${r.ref_nr ? `<div class="detail-row"><strong>Ref nr</strong><span>${escHtml(r.ref_nr)}</span></div>` : ''}
+        </div>
+        <div class="map-thumb-wrap" data-mapsrc="${escHtml(mapSrc)}" data-maplabel="${escHtml(catLabel)}">
+          <iframe src="${mapSrc}" frameborder="0" scrolling="no" loading="lazy" title="Report location"></iframe>
+          <div class="map-thumb-overlay"><span>🗺 View full map</span></div>
+        </div>
+      </div>
+      ${hasImg ? `<img class="photo-thumb" src="${imgUrl}" data-id="${r.id}" alt="Report photo" loading="lazy" />` : ''}
+    </div>
+
+    <div class="card-actions">
+      <button class="btn btn-approve" data-action="approve" data-id="${r.id}">✓ Approve</button>
+      <button class="btn btn-reject"  data-action="reject-open" data-id="${r.id}">✕ Reject…</button>
+    </div>
+
+    <div class="reject-panel" id="rp-${r.id}">
+      <label>Reason for rejection (optional — shown to moderators only)</label>
+      <textarea id="rr-${r.id}" placeholder="e.g. Duplicate report, test submission…" rows="2"></textarea>
+      <div class="reject-actions">
+        <button class="btn btn-reject" data-action="reject-confirm" data-id="${r.id}">Confirm rejection</button>
+        <button class="btn btn-ghost"  data-action="reject-cancel" data-id="${r.id}">Cancel</button>
+      </div>
+    </div>
+  `;
+
+  // Map thumbnail → open modal
+  card.querySelector('.map-thumb-wrap').addEventListener('click', e => {
+    openMapModal(e.currentTarget.dataset.mapsrc, e.currentTarget.dataset.maplabel);
+  });
+
+  // Photo lightbox
+  if (hasImg) {
+    card.querySelector('.photo-thumb').addEventListener('click', e => {
+      lightboxImg.src = e.target.src;
+      lightbox.classList.add('open');
+    });
+  }
+
+  // Action buttons
+  card.addEventListener('click', async e => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const { action, id } = btn.dataset;
+    const rid = Number(id);
+
+    if (action === 'approve') {
+      await doApprove(rid, card);
+    } else if (action === 'reject-open') {
+      document.getElementById(`rp-${rid}`).classList.add('open');
+      btn.disabled = true;
+    } else if (action === 'reject-cancel') {
+      document.getElementById(`rp-${rid}`).classList.remove('open');
+      card.querySelector('[data-action="reject-open"]').disabled = false;
+    } else if (action === 'reject-confirm') {
+      const reason = document.getElementById(`rr-${rid}`).value.trim();
+      await doReject(rid, reason, card);
+    }
+  });
+
+  return card;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+// ── Actions ──
+async function doApprove(id, card) {
+  setCardBusy(card, true);
+  try {
+    const res = await fetch(`${API}/api/admin/reports/${id}/approve`, {
+      method: 'POST', headers: apiHeaders()
+    });
+    if (res.status === 401) { clearKey(); location.reload(); return; }
+    if (res.status === 409) { showToast('Already reviewed — refreshing', 'err'); fetchQueue(); return; }
+    if (!res.ok) throw new Error();
+    removeCard(card);
+    updateBadge(-1);
+    showToast('Report approved and published ✓', 'ok');
+    fetchHistory(); // sync history section with the newly approved report
+  } catch {
+    showToast('Approve failed — try again', 'err');
+    setCardBusy(card, false);
+  }
+}
+
+async function doReject(id, reason, card) {
+  setCardBusy(card, true);
+  try {
+    const res = await fetch(`${API}/api/admin/reports/${id}/reject`, {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify({ reason }),
+    });
+    if (res.status === 401) { clearKey(); location.reload(); return; }
+    if (res.status === 409) { showToast('Already reviewed — refreshing', 'err'); fetchQueue(); return; }
+    if (!res.ok) throw new Error();
+    removeCard(card);
+    updateBadge(-1);
+    showToast('Report rejected', 'ok');
+    fetchHistory(); // sync history section with the newly rejected report
+  } catch {
+    showToast('Reject failed — try again', 'err');
+    setCardBusy(card, false);
+  }
+}
+
+// Re-approve a previously rejected report
+async function doReApprove(id, origReport, card) {
+  setCardBusy(card, true);
+  try {
+    const res = await fetch(`${API}/api/admin/reports/${id}/approve`, {
+      method: 'POST', headers: apiHeaders()
+    });
+    if (res.status === 401) { clearKey(); location.reload(); return; }
+    if (!res.ok) throw new Error();
+    // Update local history record and re-render
+    const rec = allHistory.find(r => r.id === id);
+    if (rec) { rec.status = 'approved'; rec.rejection_reason = null; rec.reviewed_at = new Date().toISOString(); }
+    card.replaceWith(buildHistoryCard(allHistory.find(r => r.id === id) || { ...origReport, status: 'approved' }));
+    showToast('Report re-approved and published ✓', 'ok');
+    fetchQueue(); // queue unaffected but keep it in sync in case another admin acted
+  } catch {
+    showToast('Re-approve failed — try again', 'err');
+    setCardBusy(card, false);
+  }
+}
+
+// Re-reject (or update reason on) a previously approved/rejected report
+async function doReReject(id, reason, origReport, card) {
+  setCardBusy(card, true);
+  try {
+    const res = await fetch(`${API}/api/admin/reports/${id}/reject`, {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify({ reason }),
+    });
+    if (res.status === 401) { clearKey(); location.reload(); return; }
+    if (!res.ok) throw new Error();
+    const rec = allHistory.find(r => r.id === id);
+    if (rec) { rec.status = 'rejected'; rec.rejection_reason = reason || null; rec.reviewed_at = new Date().toISOString(); }
+    card.replaceWith(buildHistoryCard(allHistory.find(r => r.id === id) || { ...origReport, status: 'rejected', rejection_reason: reason }));
+    showToast('Report rejected', 'ok');
+    fetchQueue(); // queue unaffected but keep it in sync in case another admin acted
+  } catch {
+    showToast('Reject failed — try again', 'err');
+    setCardBusy(card, false);
+  }
+}
+
+function setCardBusy(card, busy) {
+  card.querySelectorAll('button').forEach(b => b.disabled = busy);
+}
+
+function removeCard(card) {
+  card.classList.add('leaving');
+  setTimeout(() => {
+    card.remove();
+    const remaining = queueEl.querySelectorAll('.report-card').length;
+    if (remaining === 0) renderQueue([]);
+  }, 280);
+}
+
+function updateBadge(delta) {
+  const n = Math.max(0, parseInt(queueBadge.textContent || '0') + delta);
+  queueBadge.textContent = n;
+  queueBadge.className = 'badge' + (n === 0 ? ' zero' : '');
+}
+
+// ── Lightbox ──
+lightbox.addEventListener('click', () => {
+  lightbox.classList.remove('open');
+  lightboxImg.src = '';
+});
+
+// ── Push notifications ──
+const pushBtn = document.getElementById('push-btn');
+
+// ── Alert beep (Web Audio — no file needed) ──
+// We keep a single AudioContext alive and resume it on first user interaction,
+// so it's ready when a push arrives (browsers block audio without a prior gesture).
+let _audioCtx = null;
+
+function getAudioCtx() {
+  if (!_audioCtx) {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (_audioCtx.state === 'suspended') {
+    _audioCtx.resume().catch(() => {});
+  }
+  return _audioCtx;
+}
+
+// Prime the AudioContext on the very first user interaction with the page.
+function primeAudio() {
+  try { getAudioCtx(); } catch { /* unsupported */ }
+  document.removeEventListener('pointerdown', primeAudio);
+  document.removeEventListener('keydown', primeAudio);
+}
+document.addEventListener('pointerdown', primeAudio);
+document.addEventListener('keydown', primeAudio);
+
+function playAlertBeep() {
+  try {
+    const ctx = getAudioCtx();
+
+    function tone(freq, startAt, duration, vol = 0.35) {
+      const osc = ctx.createOscillator();
+      const g   = ctx.createGain();
+      osc.connect(g);
+      g.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startAt);
+      g.gain.setValueAtTime(vol, startAt);
+      g.gain.exponentialRampToValueAtTime(0.001, startAt + duration);
+      osc.start(startAt);
+      osc.stop(startAt + duration);
+    }
+
+    const t = ctx.currentTime;
+    tone(880, t,       0.18);   // high ding
+    tone(660, t + 0.2, 0.28);   // lower dong
+  } catch {
+    // AudioContext blocked or unavailable — silent fail
+  }
+}
+
+// Listen for messages from the service worker.
+navigator.serviceWorker?.addEventListener('message', e => {
+  if (e.data?.type === 'PLAY_ALERT') playAlertBeep();
+  if (e.data?.type === 'REFRESH_QUEUE') fetchQueue();
+});
+
+// Convert a base64url VAPID public key to the Uint8Array applicationServerKey
+// that PushManager.subscribe() expects.
+function urlB64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw     = atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+// Read current browser subscription state and update button accordingly.
+async function syncPushButton() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    // Browser doesn't support push — hide the button entirely.
+    pushBtn.classList.add('hidden');
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    pushBtn.classList.remove('hidden');
+    pushBtn.disabled = true;
+    pushBtn.textContent = '🔕 Notifications blocked';
+    return;
+  }
+
+  const reg = await navigator.serviceWorker.ready;
+  const existing = await reg.pushManager.getSubscription();
+
+  pushBtn.classList.remove('hidden');
+  pushBtn.disabled = false;
+
+  if (existing) {
+    pushBtn.classList.add('subscribed');
+    pushBtn.title = 'Click to disable push alerts on this browser';
+    pushBtn.innerHTML = '🔔 Alerts on';
+  } else {
+    pushBtn.classList.remove('subscribed');
+    pushBtn.title = 'Enable push notifications for new reports';
+    pushBtn.innerHTML = '🔔 Enable alerts';
+  }
+}
+
+async function subscribePush() {
+  pushBtn.disabled = true;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlB64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+
+    const res = await fetch(`${API}/api/admin/push-subscribe`, {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify(sub.toJSON()),
+    });
+
+    if (res.status === 401) { clearKey(); location.reload(); return; }
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+
+    showToast('Push alerts enabled on this browser ✓', 'ok');
+  } catch (err) {
+    console.error('Push subscribe failed:', err);
+    showToast('Could not enable push alerts', 'err');
+  } finally {
+    await syncPushButton();
+  }
+}
+
+async function unsubscribePush() {
+  pushBtn.disabled = true;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (!sub) { await syncPushButton(); return; }
+
+    // Tell the server to remove this subscription first, then unsubscribe locally.
+    await fetch(`${API}/api/admin/push-unsubscribe`, {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify({ endpoint: sub.endpoint }),
+    }).catch(() => {}); // best-effort — unsubscribe locally regardless
+
+    await sub.unsubscribe();
+    showToast('Push alerts disabled on this browser', 'ok');
+  } catch (err) {
+    console.error('Push unsubscribe failed:', err);
+    showToast('Could not disable push alerts', 'err');
+  } finally {
+    await syncPushButton();
+  }
+}
+
+pushBtn.addEventListener('click', async () => {
+  const reg = await navigator.serviceWorker.ready;
+  const existing = await reg.pushManager.getSubscription();
+  if (existing) {
+    await unsubscribePush();
+  } else {
+    await subscribePush();
+  }
+});
+
+// Register the admin service worker and sync button state.
+async function initPush() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    await navigator.serviceWorker.register('/admin/sw.js');
+    await syncPushButton();
+  } catch (err) {
+    console.warn('SW registration failed:', err);
+  }
+}
+
+// ── Boot ──
+(function boot() {
+  const saved = loadKey();
+  if (saved) {
+    // Validate saved key silently — if it fails the try will show login
+    adminKey = saved;
+    fetch(`${API}/api/admin/reports`, { headers: { 'Authorization': `Bearer ${saved}` } })
+      .then(res => {
+        if (res.status === 401) { clearKey(); hideLoading(); return; }
+        return res.json().then(reports => { showApp(reports); hideLoading(); });
+      })
+      .catch(() => hideLoading());
+  } else {
+    hideLoading();
+  }
+})();
+</script>
+</body>
+</html>
