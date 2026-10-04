@@ -1,5 +1,5 @@
 db-export.sql
-*.sql
+*-export.sql
 .wrangler/
 .dev.vars
 .env
