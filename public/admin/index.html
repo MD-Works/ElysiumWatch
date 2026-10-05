@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#f0a500" />
 <link rel="manifest" href="/admin/manifest.json" />
 <title>ElysiumWatch — Admin</title>
@@ -569,7 +569,7 @@
     gap: 6px;
     margin-bottom: 16px;
   }
-  .filter-btn {
+  .filter-btn, .range-btn {
     background: transparent;
     border: 1px solid var(--border);
     color: var(--muted);
@@ -581,8 +581,8 @@
     cursor: pointer;
     transition: all 0.15s;
   }
-  .filter-btn:hover { color: var(--text); border-color: var(--muted); }
-  .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .filter-btn:hover, .range-btn:hover { color: var(--text); border-color: var(--muted); }
+  .filter-btn.active, .range-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
   /* ── Status pill on history cards ── */
   .status-pill {
@@ -646,6 +646,50 @@
   }
   #push-btn:disabled { opacity: 0.45; cursor: not-allowed; }
   #push-btn.hidden { display: none; }
+
+  /* ── Phone layout ── */
+  header { padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
+  .header-left { white-space: nowrap; }
+  #logout-btn { white-space: nowrap; }
+  .map-link {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
+    background: transparent; border: 1px solid var(--border); color: var(--text);
+    font-family: var(--font); font-size: 13px; font-weight: 600;
+    padding: 9px 14px; min-height: 40px; border-radius: var(--radius); cursor: pointer;
+  }
+  @media (max-width: 520px) {
+    header { padding-left: 12px; padding-right: 12px; }
+    .header-right { gap: 6px; }
+    #refresh-btn .lbl { display: none; }
+    .card-header { flex-wrap: wrap; }
+    .card-header > span[style*="monospace"] { margin-left: auto; }
+    .card-meta { order: 3; flex-basis: 100%; }
+    .btn { min-height: 44px; }
+    .filter-btn, .range-btn { min-height: 36px; }
+  }
+
+  /* ── Clear old reports ── */
+  #purge-modal {
+    display: none; position: fixed; inset: 0; z-index: 60;
+    background: rgba(0,0,0,0.6); align-items: flex-end; justify-content: center;
+  }
+  #purge-modal.open { display: flex; }
+  .purge-card {
+    width: 100%; max-width: 480px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 16px 16px 0 0;
+    padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .purge-card h3 { font-size: 17px; }
+  .purge-card label { font-size: 12px; color: var(--muted); }
+  .purge-card select {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 11px 12px; font-size: 15px; font-family: var(--font);
+  }
+  .purge-note { font-size: 13px; color: var(--muted); }
+  #purge-result { min-height: 20px; font-size: 14px; }
+  .purge-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .purge-actions .btn-reject { flex: 1; }
 </style>
 </head>
 <body>
@@ -681,11 +725,11 @@
         <path d="M14 7 L20 11 L20 17 L14 21 L8 17 L8 11 Z" stroke="#4f8ef7" stroke-width="1.5" fill="none"/>
         <circle cx="14" cy="14" r="3" fill="#4f8ef7"/>
       </svg>
-      Moderation queue
+      Moderation
     </div>
     <div class="header-right">
       <button id="push-btn" class="hidden" title="Enable push notifications for new reports">🔔 Enable alerts</button>
-      <button class="btn btn-ghost" id="refresh-btn" style="padding:6px 12px;font-size:13px;">↻ Refresh</button>
+      <button class="btn btn-ghost" id="refresh-btn" aria-label="Refresh" style="padding:6px 12px;font-size:13px;">↻<span class="lbl"> Refresh</span></button>
       <button id="logout-btn">Sign out</button>
     </div>
   </header>
@@ -712,7 +756,13 @@
     </div>
     <div class="section-body" id="history-section-body">
       <div style="padding-bottom:40px;">
-        <div class="filter-bar" style="margin-top:12px;">
+        <div class="filter-bar" id="range-bar" style="margin-top:12px;margin-bottom:8px;">
+          <button class="range-btn" data-days="1">24 hours</button>
+          <button class="range-btn active" data-days="7">7 days</button>
+          <button class="range-btn" data-days="30">30 days</button>
+          <button class="range-btn" data-days="0">All time</button>
+        </div>
+        <div class="filter-bar">
           <button class="filter-btn active" data-filter="all">All</button>
           <button class="filter-btn" data-filter="approved">Approved</button>
           <button class="filter-btn" data-filter="rejected">Rejected</button>
@@ -720,9 +770,38 @@
         <div id="history-list">
           <!-- history cards injected here -->
         </div>
+        <button class="btn btn-ghost" id="history-more" style="display:none;width:100%;margin-top:8px;">Load more</button>
+        <button class="btn btn-ghost" id="purge-open" style="width:100%;margin-top:16px;">Clear old reports…</button>
       </div>
     </div>
 
+  </div>
+</div>
+
+<!-- Clear old reports -->
+<div id="purge-modal">
+  <div class="purge-card">
+    <h3>Clear old reports</h3>
+    <p class="purge-note">Deletes reports and their photos for good. Pending reports are never touched.</p>
+    <label for="purge-status">Which reports</label>
+    <select id="purge-status">
+      <option value="rejected">Rejected</option>
+      <option value="approved">Approved</option>
+      <option value="both">Approved and rejected</option>
+    </select>
+    <label for="purge-age">Older than</label>
+    <select id="purge-age">
+      <option value="7">7 days</option>
+      <option value="30" selected>30 days</option>
+      <option value="90">90 days</option>
+      <option value="0">Any age</option>
+    </select>
+    <div id="purge-result" aria-live="polite"></div>
+    <div class="purge-actions">
+      <button class="btn btn-ghost" id="purge-check">Check</button>
+      <button class="btn btn-reject" id="purge-confirm" disabled>Delete</button>
+      <button class="btn btn-ghost" id="purge-close">Close</button>
+    </div>
   </div>
 </div>
 
@@ -786,8 +865,12 @@ function closeMapModal() {
 }
 
 // ── History state ──
-let allHistory = [];      // full fetched list
+let allHistory = [];      // reports loaded so far
 let historyFilter = 'all'; // 'all' | 'approved' | 'rejected'
+let historyDays = 7;       // 1 | 7 | 30 | 0 (0 = all time)
+let historyHasMore = false;
+const HISTORY_PAGE = 30;
+const historyMoreBtn = document.getElementById('history-more');
 
 // ── Helpers ──
 function hideLoading() {
@@ -967,15 +1050,21 @@ async function fetchQueue() {
 }
 
 // ── Fetch history ──
-async function fetchHistory() {
+async function fetchHistory(append = false) {
+  const offset = append === true ? allHistory.length : 0;
+  const params = new URLSearchParams({ days: historyDays, limit: HISTORY_PAGE + 1, offset });
+  if (historyFilter !== 'all') params.set('status', historyFilter);
   try {
-    const res = await fetch(`${API}/api/admin/reports/history`, { headers: apiHeaders() });
+    const res = await fetch(`${API}/api/admin/reports/history?${params}`, { headers: apiHeaders() });
     if (res.status === 401) { clearKey(); location.reload(); return; }
     if (!res.ok) throw new Error();
-    allHistory = await res.json();
+    const rows = await res.json();
+    historyHasMore = rows.length > HISTORY_PAGE;
+    const page = rows.slice(0, HISTORY_PAGE);
+    allHistory = append === true ? allHistory.concat(page) : page;
     renderHistory();
   } catch {
-    historyList.innerHTML = '<div class="history-empty">Could not load history.</div>';
+    historyList.innerHTML = '<div class="history-empty">Could not load history. Check your connection and tap Refresh.</div>';
   }
 }
 
@@ -986,9 +1075,20 @@ filterBtns.forEach(btn => {
   btn.addEventListener('click', () => {
     historyFilter = btn.dataset.filter;
     filterBtns.forEach(b => b.classList.toggle('active', b === btn));
-    renderHistory();
+    fetchHistory();
   });
 });
+
+// ── Time range buttons ──
+const rangeBtns = document.querySelectorAll('.range-btn');
+rangeBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    historyDays = Number(btn.dataset.days);
+    rangeBtns.forEach(b => b.classList.toggle('active', b === btn));
+    fetchHistory();
+  });
+});
+historyMoreBtn.addEventListener('click', () => fetchHistory(true));
 
 // ── Render ──
 function renderQueue(reports) {
@@ -1020,21 +1120,19 @@ function renderQueue(reports) {
 
 // ── History render ──
 function renderHistory() {
-  const filtered = historyFilter === 'all'
-    ? allHistory
-    : allHistory.filter(r => r.status === historyFilter);
+  historyMoreBtn.style.display = historyHasMore ? '' : 'none';
 
-  if (filtered.length === 0) {
-    historyList.innerHTML = `<div class="history-empty">${
-      allHistory.length === 0
-        ? 'No reviewed reports yet.'
-        : `No ${historyFilter} reports.`
+  if (allHistory.length === 0) {
+    const period = historyDays === 0 ? '' : historyDays === 1 ? ' in the last 24 hours' : ` in the last ${historyDays} days`;
+    const what = historyFilter === 'all' ? 'reviewed' : historyFilter;
+    historyList.innerHTML = `<div class="history-empty">No ${what} reports${period}.${
+      historyDays !== 0 ? ' Try a longer time range.' : ''
     }</div>`;
     return;
   }
 
   historyList.innerHTML = '';
-  filtered.forEach(r => historyList.appendChild(buildHistoryCard(r)));
+  allHistory.forEach(r => historyList.appendChild(buildHistoryCard(r)));
 
   // Re-measure section height
   const body = document.getElementById('history-section-body');
@@ -1082,10 +1180,7 @@ function buildHistoryCard(r) {
           ${r.ref_nr ? `<div class="detail-row"><strong>Ref nr</strong><span>${escHtml(r.ref_nr)}</span></div>` : ''}
           ${r.rejection_reason ? `<div class="detail-row"><strong>Reason</strong><span style="color:var(--reject)">${escHtml(r.rejection_reason)}</span></div>` : ''}
         </div>
-        <div class="map-thumb-wrap" data-mapsrc="${escHtml(mapSrc)}" data-maplabel="${escHtml(label + ' #' + r.id)}">
-          <iframe src="${mapSrc}" frameborder="0" scrolling="no" loading="lazy" title="Report location"></iframe>
-          <div class="map-thumb-overlay"><span>🗺 View full map</span></div>
-        </div>
+        <button class="map-link" data-mapsrc="${escHtml(mapSrc)}" data-maplabel="${escHtml(label + ' #' + r.id)}">📍 View location</button>
       </div>
       ${hasImg ? `<img class="photo-thumb" src="${imgUrl}" data-id="${r.id}" alt="Report photo" loading="lazy" />` : ''}
     </div>
@@ -1096,6 +1191,15 @@ function buildHistoryCard(r) {
         : `<button class="btn btn-approve" data-haction="reapprove"       data-id="${r.id}">✓ Approve</button>
            <button class="btn btn-ghost"   data-haction="rereject-open"   data-id="${r.id}" style="border-color:var(--reject);color:var(--reject);">Change reason…</button>`
       }
+      <button class="btn btn-ghost" data-haction="delete-open" data-id="${r.id}">Delete…</button>
+    </div>
+
+    <div class="rereview-panel" id="hdp-${r.id}">
+      <label>Delete this report permanently? Its photo is removed too. This can't be undone.</label>
+      <div class="rereview-actions">
+        <button class="btn btn-reject" data-haction="delete-confirm" data-id="${r.id}">Delete permanently</button>
+        <button class="btn btn-ghost"  data-haction="delete-cancel"  data-id="${r.id}">Cancel</button>
+      </div>
     </div>
 
     <div class="rereview-panel" id="hrp-${r.id}">
@@ -1116,7 +1220,7 @@ function buildHistoryCard(r) {
   }
 
   // Map thumbnail → modal
-  card.querySelector('.map-thumb-wrap').addEventListener('click', e => {
+  card.querySelector('.map-link').addEventListener('click', e => {
     openMapModal(e.currentTarget.dataset.mapsrc, e.currentTarget.dataset.maplabel);
   });
 
@@ -1137,6 +1241,12 @@ function buildHistoryCard(r) {
     } else if (haction === 'rereject-confirm') {
       const reason = document.getElementById(`hrr-${rid}`).value.trim();
       await doReReject(rid, reason, r, card);
+    } else if (haction === 'delete-open') {
+      document.getElementById(`hdp-${rid}`).classList.add('open');
+    } else if (haction === 'delete-cancel') {
+      document.getElementById(`hdp-${rid}`).classList.remove('open');
+    } else if (haction === 'delete-confirm') {
+      await doDelete(rid, card);
     }
   });
 
@@ -1309,6 +1419,103 @@ async function doReApprove(id, origReport, card) {
     setCardBusy(card, false);
   }
 }
+
+// Permanently delete a report (and its photo)
+async function doDelete(id, card) {
+  setCardBusy(card, true);
+  try {
+    const res = await fetch(`${API}/api/admin/reports/${id}/delete`, { method: 'POST', headers: apiHeaders() });
+    if (res.status === 401) { clearKey(); location.reload(); return; }
+    if (!res.ok && res.status !== 404) throw new Error();
+    let body = {};
+    try { body = await res.json(); } catch { /* 404 body is fine */ }
+    allHistory = allHistory.filter(r => r.id !== id);
+    removeCard(card);
+    if (body.image_deleted === false) showToast('Report deleted, but its photo could not be removed', 'err');
+    else showToast('Report deleted', 'ok');
+    if (allHistory.length === 0) renderHistory();
+  } catch {
+    showToast('Delete failed — try again', 'err');
+    setCardBusy(card, false);
+  }
+}
+
+// ── Clear old reports ──
+const purgeModal   = document.getElementById('purge-modal');
+const purgeStatus  = document.getElementById('purge-status');
+const purgeAge     = document.getElementById('purge-age');
+const purgeResult  = document.getElementById('purge-result');
+const purgeCheck   = document.getElementById('purge-check');
+const purgeConfirm = document.getElementById('purge-confirm');
+let purgeBusy = false;
+
+function purgePayload() {
+  return { status: purgeStatus.value, older_than_days: Number(purgeAge.value) };
+}
+function resetPurge() {
+  purgeResult.textContent = '';
+  purgeConfirm.disabled = true;
+  purgeConfirm.textContent = 'Delete';
+}
+async function purgeCall(extra) {
+  const res = await fetch(`${API}/api/admin/reports/purge`, {
+    method: 'POST', headers: apiHeaders(), body: JSON.stringify({ ...purgePayload(), ...extra }),
+  });
+  if (res.status === 401) { clearKey(); location.reload(); return null; }
+  if (!res.ok) throw new Error();
+  return res.json();
+}
+document.getElementById('purge-open').addEventListener('click', () => { resetPurge(); purgeModal.classList.add('open'); });
+document.getElementById('purge-close').addEventListener('click', () => { if (!purgeBusy) purgeModal.classList.remove('open'); });
+purgeModal.addEventListener('click', e => { if (e.target === purgeModal && !purgeBusy) purgeModal.classList.remove('open'); });
+purgeStatus.addEventListener('change', resetPurge);
+purgeAge.addEventListener('change', resetPurge);
+
+purgeCheck.addEventListener('click', async () => {
+  if (purgeBusy) return;
+  purgeResult.textContent = 'Checking…';
+  try {
+    const r = await purgeCall({ dry_run: true });
+    if (!r) return;
+    if (r.matching === 0) {
+      purgeResult.textContent = 'No reports match. Nothing to delete.';
+      purgeConfirm.disabled = true;
+    } else {
+      purgeResult.textContent = `${r.matching} report${r.matching === 1 ? '' : 's'} will be deleted permanently.`;
+      purgeConfirm.textContent = `Delete ${r.matching}`;
+      purgeConfirm.disabled = false;
+    }
+  } catch {
+    purgeResult.textContent = 'Could not check. Try again.';
+  }
+});
+
+purgeConfirm.addEventListener('click', async () => {
+  if (purgeBusy) return;
+  purgeBusy = true;
+  purgeConfirm.disabled = true;
+  purgeCheck.disabled = true;
+  let deleted = 0, photosFailed = 0;
+  try {
+    while (true) {
+      const r = await purgeCall({});
+      if (!r) return;
+      deleted += r.deleted;
+      photosFailed += r.images_failed;
+      purgeResult.textContent = `Deleted ${deleted}…`;
+      if (r.remaining <= 0 || r.deleted === 0) break;
+    }
+    purgeResult.textContent = `Deleted ${deleted} report${deleted === 1 ? '' : 's'}.` +
+      (photosFailed ? ` ${photosFailed} photo${photosFailed === 1 ? '' : 's'} could not be removed from storage. Check the storage key permissions.` : '');
+    purgeConfirm.textContent = 'Delete';
+    fetchHistory();
+  } catch {
+    purgeResult.textContent = `Stopped after ${deleted} deleted. Try again.`;
+  } finally {
+    purgeBusy = false;
+    purgeCheck.disabled = false;
+  }
+});
 
 // Re-reject (or update reason on) a previously approved/rejected report
 async function doReReject(id, reason, origReport, card) {

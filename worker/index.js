@@ -115,6 +115,43 @@ async function b2DownloadImage(env, fileName) {
   return res; // caller checks res.ok
 }
 
+// Permanently delete every stored version of a photo. Best-effort: returns true if the
+// file is gone (or was already missing), false if B2 refused (for example the application
+// key lacks the listFiles / deleteFiles capability). Never throws.
+async function b2DeleteImage(env, fileName) {
+  try {
+    const { apiUrl, authToken } = await b2Authorize(env);
+    const headers = { Authorization: authToken, "Content-Type": "application/json" };
+
+    const listRes = await fetch(`${apiUrl}/b2api/v3/b2_list_file_versions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        bucketId: env.B2_BUCKET_ID,
+        startFileName: fileName,
+        prefix: fileName,
+        maxFileCount: 10,
+      }),
+    });
+    if (!listRes.ok) return false;
+    const { files = [] } = await listRes.json();
+    const versions = files.filter((f) => f.fileName === fileName);
+
+    for (const f of versions) {
+      const delRes = await fetch(`${apiUrl}/b2api/v3/b2_delete_file_version`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ fileName: f.fileName, fileId: f.fileId }),
+      });
+      if (!delRes.ok) return false;
+    }
+    return true; // also true when there was nothing to delete
+  } catch (err) {
+    console.error("b2DeleteImage failed", err);
+    return false;
+  }
+}
+
 // ---------- VAPID / Web Push ----------
 
 function b64urlToBytes(str) {
@@ -310,12 +347,38 @@ async function handleGetImage(request, env, reportId) {
 
 // ---------- Admin route handlers ----------
 
+// History supports ?days=7 (0 or missing = all time), ?status=approved|rejected,
+// ?limit=30 (max 100) and ?offset=0. With no parameters it behaves as before (latest 500).
 async function handleAdminGetHistory(request, env) {
+  const url = new URL(request.url);
+  const hasParams = ["days", "status", "limit", "offset"].some((k) => url.searchParams.has(k));
+
+  const days = Math.max(0, parseInt(url.searchParams.get("days") || "0", 10) || 0);
+  const status = url.searchParams.get("status");
+  const limit = hasParams
+    ? Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "30", 10) || 30))
+    : 500;
+  const offset = Math.max(0, parseInt(url.searchParams.get("offset") || "0", 10) || 0);
+
+  const where = [];
+  const binds = [];
+  if (status === "approved" || status === "rejected") {
+    where.push("status = ?");
+    binds.push(status);
+  } else {
+    where.push("status IN ('approved', 'rejected')");
+  }
+  if (days > 0) {
+    where.push("reviewed_at >= datetime('now', ?)");
+    binds.push(`-${days} days`);
+  }
+
   const { results } = await env.DB.prepare(
     `SELECT id, lat, lng, category, ref_nr, incident_at, message, image_key,
             reporter_contact, status, rejection_reason, created_at, reviewed_at
-     FROM reports WHERE status IN ('approved', 'rejected') ORDER BY reviewed_at DESC LIMIT 500`
-  ).all();
+     FROM reports WHERE ${where.join(" AND ")}
+     ORDER BY reviewed_at DESC, id DESC LIMIT ? OFFSET ?`
+  ).bind(...binds, limit, offset).all();
 
   return json(results);
 }
@@ -366,6 +429,68 @@ async function handleAdminReject(request, env, reportId) {
     if (update.meta.changes === 0) return json({ error: "Report not found" }, 404);
   }
   return json({ id: reportId, status: "rejected" });
+}
+
+// Permanently delete one report (any status) and, best-effort, its photo.
+async function handleAdminDelete(request, env, reportId) {
+  const report = await env.DB.prepare(
+    `SELECT id, image_key FROM reports WHERE id = ?`
+  ).bind(reportId).first();
+  if (!report) return json({ error: "Report not found" }, 404);
+
+  await env.DB.prepare(`DELETE FROM reports WHERE id = ?`).bind(reportId).run();
+
+  let imageDeleted = null; // null = there was no photo
+  if (report.image_key) imageDeleted = await b2DeleteImage(env, report.image_key);
+
+  return json({ id: reportId, deleted: true, image_deleted: imageDeleted });
+}
+
+// Bulk clean-up of reviewed reports. Body: { status: "rejected"|"approved"|"both",
+// older_than_days: number (0 = any age), dry_run: boolean }.
+// Pending reports are never touched. Each call deletes at most PURGE_BATCH reports so it
+// stays inside Workers subrequest limits; the client repeats until `remaining` is 0.
+const PURGE_BATCH = 10;
+
+async function handleAdminPurge(request, env) {
+  let body = {};
+  try { body = await request.json(); } catch { /* use defaults */ }
+
+  const status = ["rejected", "approved", "both"].includes(body.status) ? body.status : null;
+  if (!status) return json({ error: "status must be rejected, approved or both" }, 400);
+
+  const days = Math.max(0, parseInt(body.older_than_days, 10) || 0);
+  const dryRun = body.dry_run === true;
+
+  const where = [];
+  const binds = [];
+  if (status === "both") where.push("status IN ('approved', 'rejected')");
+  else { where.push("status = ?"); binds.push(status); }
+  if (days > 0) {
+    where.push("COALESCE(reviewed_at, created_at) < datetime('now', ?)");
+    binds.push(`-${days} days`);
+  }
+  const whereSql = where.join(" AND ");
+
+  const countRow = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM reports WHERE ${whereSql}`
+  ).bind(...binds).first();
+  const total = countRow?.n || 0;
+  if (dryRun) return json({ dry_run: true, matching: total });
+
+  const { results } = await env.DB.prepare(
+    `SELECT id, image_key FROM reports WHERE ${whereSql} ORDER BY id ASC LIMIT ?`
+  ).bind(...binds, PURGE_BATCH).all();
+
+  let deleted = 0;
+  let imagesFailed = 0;
+  for (const r of results) {
+    await env.DB.prepare(`DELETE FROM reports WHERE id = ?`).bind(r.id).run();
+    deleted++;
+    if (r.image_key && !(await b2DeleteImage(env, r.image_key))) imagesFailed++;
+  }
+
+  return json({ deleted, images_failed: imagesFailed, remaining: Math.max(0, total - deleted) });
 }
 
 // Proxies image for pending reports — same as public handleGetImage but skips status check
@@ -437,6 +562,15 @@ export default {
         const rejectMatch = path.match(/^\/api\/admin\/reports\/(\d+)\/reject$/);
         if (rejectMatch && request.method === "POST") {
           return await handleAdminReject(request, env, Number(rejectMatch[1]));
+        }
+
+        const deleteMatch = path.match(/^\/api\/admin\/reports\/(\d+)\/delete$/);
+        if (deleteMatch && request.method === "POST") {
+          return await handleAdminDelete(request, env, Number(deleteMatch[1]));
+        }
+
+        if (path === "/api/admin/reports/purge" && request.method === "POST") {
+          return await handleAdminPurge(request, env);
         }
 
         const adminImageMatch = path.match(/^\/api\/admin\/reports\/(\d+)\/image$/);
